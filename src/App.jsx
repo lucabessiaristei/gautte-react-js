@@ -4,6 +4,18 @@ import Sidebar from './components/Sidebar';
 import { useGTFSData } from './hooks/useGTFSData';
 import { getCurrentDate, getCurrentTime } from './utils/dateHelpers';
 import { GTFSRealtimeService } from './services/gtfsRealtimeService';
+import { registerSW } from 'virtual:pwa-register';
+
+const updateSW = registerSW({
+  onNeedRefresh() {
+    if (confirm('New version available. Reload to update?')) {
+      updateSW(true);
+    }
+  },
+  onOfflineReady() {
+    console.log('App ready to work offline');
+  },
+});
 
 function App() {
   const { gtfsData, loading, error } = useGTFSData();
@@ -14,6 +26,7 @@ function App() {
   const [stopArrivals, setStopArrivals] = useState([]);
   const [arrivalsLoading, setArrivalsLoading] = useState(false);
   const [realtimeService] = useState(() => new GTFSRealtimeService());
+  const [currentRouteId, setCurrentRouteId] = useState(null);
 
   useEffect(() => {
     const fetchRealtime = async () => {
@@ -21,7 +34,7 @@ function App() {
         await realtimeService.fetchTripUpdates();
         
         if (selectedStop) {
-          const arrivals = realtimeService.getNextArrivalsForStop(
+          const arrivals = await realtimeService.getNextArrivalsForStop(
             selectedStop.stop_id,
             gtfsData
           );
@@ -39,12 +52,25 @@ function App() {
     }
   }, [gtfsData, selectedStop, realtimeService]);
 
+  useEffect(() => {
+    window.closeArrivals = () => {
+      setSelectedStop(null);
+      setArrivals([]);
+      setShowArrivals(false);
+    };
+
+    // Cleanup quando il componente si smonta
+    return () => {
+      delete window.closeArrivals;
+    };
+  }, []);
+
   const handleStopSelect = async (stop) => {
     setSelectedStop(stop);
     setArrivalsLoading(true);
     
     try {
-      const arrivals = realtimeService.getNextArrivalsForStop(
+      const arrivals = await realtimeService.getNextArrivalsForStop(
         stop.stop_id,
         gtfsData
       );

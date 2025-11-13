@@ -1,6 +1,6 @@
 // components/Sidebar.jsx
-import { useState } from 'react';
-import { ArrowsClockwise, MapPin, X } from '@phosphor-icons/react';
+import { useState, useEffect } from 'react';
+import { ArrowsClockwiseIcon, MapPinIcon, X } from '@phosphor-icons/react';
 import { getCurrentDate, getCurrentTime } from '../utils/dateHelpers';
 import StopArrivals from './StopArrivals';
 
@@ -29,7 +29,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="w-80 bg-white border-r border-gray-200 flex flex-col h-screen overflow-y-auto">
+    <aside className="w-80 bg-white flex flex-col h-screen overflow-y-auto">
       <div className="p-6 border-b border-gray-200">
         <h1 className="text-2xl font-bold text-gray-900">Transit Map</h1>
         <p className="text-sm text-gray-500 mt-1">Real-time public transport visualization</p>
@@ -43,7 +43,7 @@ export default function Sidebar({
             onClick={onReset}
             className="w-full px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-left text-sm font-medium text-gray-700 transition-colors flex items-center gap-2"
           >
-            <ArrowsClockwise size={18} />
+            <ArrowsClockwiseIcon size={18} />
             Reset View
           </button>
 
@@ -51,7 +51,7 @@ export default function Sidebar({
             onClick={onLocate}
             className="w-full px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-left text-sm font-medium text-gray-700 transition-colors flex items-center gap-2"
           >
-            <MapPin size={18} weight="fill" />
+            <MapPinIcon size={18} weight="fill" />
             Center on Location
           </button>
 

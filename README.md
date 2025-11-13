@@ -18,5 +18,5 @@ If you are developing a production application, we recommend using TypeScript wi
 
 ## Known Issues
 
-- Some lines are truncated (e.g. Line 51)
+- Some lines are truncated (e.g. Line 51, 67, 27)
 - Clicking a stop again after its popup is already shown closes it but keeps ui elements (closing X).

@@ -50,20 +50,30 @@ export class GTFSRealtimeService {
     }
   }
 
-  getNextArrivalsForStop(stopId, gtfsData, limit = 10) {
-    if (!gtfsData.stopTimes || !Array.isArray(gtfsData.stopTimes)) {
-      console.error('stopTimes not loaded or invalid');
-      return [];
-    }
-
+  async getNextArrivalsForStop(stopId, gtfsData, limit = 10) {
     const arrivals = [];
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0].replace(/-/g, '');
 
-    // console.log('Looking for arrivals at stop:', stopId);
+    let stopTimes = [];
+    
+    // Try to load split file first
+    try {
+      const response = await fetch(`/public_data/stop_times/${stopId}.txt`);
+      if (response.ok) {
+        const text = await response.text();
+        stopTimes = this.parseStopTimesCSV(text);
+        console.log(`✅ Loaded ${stopTimes.length} stop_times for stop ${stopId}`);
+      }
+    } catch (error) {
+      console.warn(`Could not load split file for stop ${stopId}, falling back to full data`);
+      // Fallback to full stop_times if available
+      if (gtfsData.stopTimes && Array.isArray(gtfsData.stopTimes)) {
+        stopTimes = gtfsData.stopTimes.filter(st => st.stop_id === String(stopId));
+      }
+    }
 
-    gtfsData.stopTimes.forEach(stopTime => {
-      if (stopTime.stop_id !== String(stopId)) return;
+    stopTimes.forEach(stopTime => {
 
       const tripId = stopTime.trip_id;
       const trip = gtfsData.trips[tripId];
@@ -123,6 +133,39 @@ export class GTFSRealtimeService {
     }
     
     return time;
+  }
+
+  parseStopTimesCSV(text) {
+    const lines = text.trim().split('\n');
+    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+    const data = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let char of lines[i]) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          values.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      values.push(current.trim());
+      
+      const row = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index]?.replace(/"/g, '') || '';
+      });
+      
+      data.push(row);
+    }
+    
+    return data;
   }
 
   isServiceActive(service, dateStr, date) {

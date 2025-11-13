@@ -49,7 +49,7 @@ function TransitMap(props) {
 			"bottom-right"
 		);
 
-		map.current.addControl(new maplibregl.NavigationControl(), "top-right");
+		map.current.addControl(new maplibregl.NavigationControl(), "bottom-left");
 
 		map.current.on("error", (e) => {
 			if (e.error && e.error.message && e.error.message.includes("glyph")) {
@@ -473,11 +473,14 @@ function TransitMap(props) {
 				clearRoutes();
 				createStopMarkers();
 				onShowCloseLine?.(false);
+				if (typeof window.closeArrivals === "function") {
+					window.closeArrivals();
+				}
 			},
 		};
 	}, [activeRoutes, gtfsData, mapLoaded, selectedDate, selectedTime]);
 
-	return <div ref={mapContainer} className="w-full h-full rounded-lg" />;
+	return <div ref={mapContainer} className="w-full h-full rounded-2xl" />;
 }
 
 export default TransitMap;
