@@ -15,6 +15,20 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
         runtimeCaching: [
           {
+            urlPattern: /\/public_data\/trip_stops_index\.json$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'gtfs-index-cache',
+              expiration: {
+                maxEntries: 1,
+                maxAgeSeconds: 30 * 24 * 60 * 60
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
+            }
+          },
+          {
             urlPattern: /\/public_data\/(stops|routes|trips|calendar|stop_times|shapes|calendar_dates|stop_attributes)\.txt$/,
             handler: 'CacheFirst',
             options: {

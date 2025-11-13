@@ -5,9 +5,19 @@ export default function StopPopup({
   activeRoutes,
   gtfsData,
   onRouteSelect,
-  currentVisibleRouteId
+  currentVisibleRouteId,
+  loading
 }) {
   if (!stop || !gtfsData?.routes) return null;
+
+  if (loading) {
+    return (
+      <div className="p-3 pr-10">
+        <h3 className="text-base font-semibold text-gray-900 mb-1">{stop.stop_name}</h3>
+        <p className="text-sm text-gray-500">Loading lines...</p>
+      </div>
+    );
+  }
 
   if (!activeRoutes || activeRoutes.length === 0) {
     return (

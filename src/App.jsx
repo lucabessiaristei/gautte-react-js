@@ -55,11 +55,9 @@ function App() {
   useEffect(() => {
     window.closeArrivals = () => {
       setSelectedStop(null);
-      setArrivals([]);
-      setShowArrivals(false);
+      setStopArrivals([]);
     };
 
-    // Cleanup quando il componente si smonta
     return () => {
       delete window.closeArrivals;
     };
