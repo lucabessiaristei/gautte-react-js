@@ -1,103 +1,130 @@
 // components/Sidebar.jsx
-import { useState, useEffect } from 'react';
-import { ArrowsClockwiseIcon, MapPinIcon, X } from '@phosphor-icons/react';
-import { getCurrentDate, getCurrentTime } from '../utils/dateHelpers';
-import StopArrivals from './StopArrivals';
+import { useState } from "react";
+import { CaretRightIcon } from "@phosphor-icons/react";
+import { UserFocusIcon, ArrowsClockwiseIcon, XIcon } from '@phosphor-icons/react';
+import { getCurrentDate, getCurrentTime } from "../utils/dateHelpers";
+import StopArrivals from "./StopArrivals";
+import Logo from "../assets/logo-gautte.svg";
 
-export default function Sidebar({ 
-  onReset, 
-  onLocate, 
-  onCloseLine, 
-  showCloseLine,
-  onDateChange,
-  onTimeChange,
-  selectedStop,
-  stopArrivals,
-  arrivalsLoading
-}) {
-  const [date, setDate] = useState(getCurrentDate());
-  const [time, setTime] = useState(getCurrentTime());
+export default function Sidebar({ isOpen, onToggle, onDateChange, onTimeChange, selectedStop, stopArrivals, arrivalsLoading, onLocate, onReset, onCloseLine, showCloseLine }) {
+	const [date, setDate] = useState(getCurrentDate());
+	const [time, setTime] = useState(getCurrentTime());
 
-  const handleDateChange = (e) => {
-    setDate(e.target.value);
-    onDateChange?.(e.target.value);
-  };
+	const handleDateChange = (e) => {
+		setDate(e.target.value);
+		onDateChange?.(e.target.value);
+	};
 
-  const handleTimeChange = (e) => {
-    setTime(e.target.value);
-    onTimeChange?.(e.target.value);
-  };
+	const handleTimeChange = (e) => {
+		setTime(e.target.value);
+		onTimeChange?.(e.target.value);
+	};
 
-  return (
-    <aside className="w-80 bg-white flex flex-col h-screen overflow-y-auto">
-      <div className="p-6 border-b border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-900">Transit Map</h1>
-        <p className="text-sm text-gray-500 mt-1">Real-time public transport visualization</p>
-      </div>
+	return (
+		<>
+			{/* Sidebar drawer with slide animation */}
+			<aside
+				className={`
+        absolute left-2 top-0 z-20 my-2
+        bg-white flex flex-col rounded-2xl
+        transition-transform duration-300 ease-in-out
+        ${isOpen ? "translate-x-0" : "-translate-x-full"}
+        w-fit shadow-lg
+      `}
+				style={{ height: `calc(100dvh - 1rem)` }}
+      >
+				<div className="p-6 border-b border-gray-200 flex flex-col">
+					<div className="flex justify-start items-start">
+						<img src={Logo} alt="GAUTTE" className="h-[100px] w-auto object-contain" />
+					</div>
 
-      <div className="p-6 border-b border-gray-200">
-        <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Controls</h2>
-        
-        <div className="flex flex-col gap-2">
-          <button 
-            onClick={onReset}
-            className="w-full px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-left text-sm font-medium text-gray-700 transition-colors flex items-center gap-2"
-          >
-            <ArrowsClockwiseIcon size={18} />
-            Reset View
-          </button>
+					<p className="text-xs text-gray-500 mt-2">Versione 0.30.5</p>
+				</div>
 
-          <button 
-            onClick={onLocate}
-            className="w-full px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 text-left text-sm font-medium text-gray-700 transition-colors flex items-center gap-2"
-          >
-            <MapPinIcon size={18} weight="fill" />
-            Center on Location
-          </button>
+				<div className="p-5 border-b border-gray-200 w-full">
+					<div className="space-y-3">
+						<div>
+							<label className="block text-sm font-medium text-gray-700 mb-1">Orario</label>
+							<input
+								type="time"
+								value={time}
+								onChange={handleTimeChange}
+								className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+							/>
+						</div>
 
-          {showCloseLine && (
-            <button 
-              onClick={onCloseLine}
-              className="w-full px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 text-sm font-medium transition-colors flex items-center gap-2"
-            >
-              <X size={18} weight="bold" />
-              Close Line
-            </button>
-          )}
-        </div>
+						<div>
+							<label className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+							<input
+								type="date"
+								value={date}
+								onChange={handleDateChange}
+								className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+							/>
+						</div>
+					</div>
+				</div>
 
-        <div className="mt-4 space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-            <input 
-              type="time" 
-              value={time}
-              onChange={handleTimeChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+				<div className="p-5 flex-1 w-full flex flex-col min-h-0">
+					<h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Prossimi arrivi</h2>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-            <input 
-              type="date" 
-              value={date}
-              onChange={handleDateChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </div>
-      </div>
+					<div
+						className="flex-1 min-h-0">
+						<StopArrivals stop={selectedStop} arrivals={stopArrivals} loading={arrivalsLoading} />
+					</div>
+				</div>
 
-      <div className="p-6 flex-1">
-        <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-4">Next Arrivals</h2>
-        
-        <StopArrivals 
-          stop={selectedStop}
-          arrivals={stopArrivals}
-          loading={arrivalsLoading}
-        />
-      </div>
-    </aside>
-  );
+				{/* Buttons */}
+
+        <button
+					onClick={onToggle}
+					className={`
+          absolute top-1/2 -translate-y-1/2 z-10
+          bg-white rounded-r-lg shadow-lg
+          px-2 py-4 hover:bg-gray-100 transition-all duration-300
+          right-0 translate-x-full
+        `}>
+					<CaretRightIcon
+						size={20}
+						weight="bold"
+						className={`
+            transition-transform duration-300
+            ${isOpen ? "rotate-180" : "rotate-0"}
+          `}
+					/>
+				</button>
+
+
+        {/* Control buttons - top left */}
+			<div className="absolute top-4 right-0 z-10 flex flex-col gap-2" style={{transform: "translateX(calc(100% + .5rem))"}}>
+				<button 
+					onClick={onReset}
+					className="p-2 rounded-md bg-white shadow-sm hover:bg-blue-500 hover:text-white text-gray-700 transition-colors"
+					title="Reimposta vista"
+				>
+					<ArrowsClockwiseIcon size={24} />
+				</button>
+
+				<button 
+					onClick={onLocate}
+					className="p-2 rounded-md bg-white shadow-sm hover:bg-blue-500 hover:text-white text-gray-700 transition-colors"
+					title="Centra sulla posizione"
+				>
+					<UserFocusIcon size={24} weight="fill" />
+				</button>
+			</div>
+			</aside>
+
+      {/* Close line button - bottom center */}
+			{showCloseLine && (
+				<button 
+					onClick={onCloseLine}
+					className="absolute w-fit whitespace-nowrap bottom-4 left-1/2 -translate-x-1/2 z-10 pl-2 pr-3 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 text-sm font-medium flex items-center gap-2 shadow-lg"
+				>
+					<XIcon size={18} weight="bold" />
+					Chiudi linea
+				</button>
+			)}
+		</>
+	);
 }

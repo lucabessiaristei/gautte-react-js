@@ -4,18 +4,6 @@ import Sidebar from './components/Sidebar';
 import { useGTFSData } from './hooks/useGTFSData';
 import { getCurrentDate, getCurrentTime } from './utils/dateHelpers';
 import { GTFSRealtimeService } from './services/gtfsRealtimeService';
-import { registerSW } from 'virtual:pwa-register';
-
-const updateSW = registerSW({
-  onNeedRefresh() {
-    if (confirm('New version available. Reload to update?')) {
-      updateSW(true);
-    }
-  },
-  onOfflineReady() {
-    console.log('App ready to work offline');
-  },
-});
 
 function App() {
   const { gtfsData, loading, error } = useGTFSData();
@@ -27,6 +15,7 @@ function App() {
   const [arrivalsLoading, setArrivalsLoading] = useState(false);
   const [realtimeService] = useState(() => new GTFSRealtimeService());
   const [currentRouteId, setCurrentRouteId] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   useEffect(() => {
     const fetchRealtime = async () => {
@@ -34,7 +23,7 @@ function App() {
         await realtimeService.fetchTripUpdates();
         
         if (selectedStop) {
-          const arrivals = await realtimeService.getNextArrivalsForStop(
+          const arrivals = realtimeService.getNextArrivalsForStop(
             selectedStop.stop_id,
             gtfsData
           );
@@ -45,7 +34,8 @@ function App() {
       }
     };
 
-    if (gtfsData.trips) {
+    // Only fetch realtime data when all necessary GTFS data is loaded
+    if (gtfsData.trips && gtfsData.stopTimes && gtfsData.services) {
       fetchRealtime();
       const interval = setInterval(fetchRealtime, 30000);
       return () => clearInterval(interval);
@@ -55,9 +45,11 @@ function App() {
   useEffect(() => {
     window.closeArrivals = () => {
       setSelectedStop(null);
-      setStopArrivals([]);
+      setArrivals([]);
+      setShowArrivals(false);
     };
 
+    // Cleanup quando il componente si smonta
     return () => {
       delete window.closeArrivals;
     };
@@ -68,7 +60,14 @@ function App() {
     setArrivalsLoading(true);
     
     try {
-      const arrivals = await realtimeService.getNextArrivalsForStop(
+      // Check if all necessary data is loaded
+      if (!gtfsData.stopTimes || !gtfsData.trips || !gtfsData.services) {
+        console.warn('GTFS data not fully loaded yet');
+        setStopArrivals([]);
+        return;
+      }
+      
+      const arrivals = realtimeService.getNextArrivalsForStop(
         stop.stop_id,
         gtfsData
       );
@@ -128,17 +127,19 @@ function App() {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
-        onReset={handleReset}
+        isOpen={isSidebarOpen}
         onLocate={handleLocate}
-        onCloseLine={handleCloseLine}
-        showCloseLine={showCloseLine}
+        onReset={handleReset}
+          onCloseLine={handleCloseLine}
+          showCloseLine={showCloseLine}
+        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
         onDateChange={setSelectedDate}
         onTimeChange={setSelectedTime}
         selectedStop={selectedStop}
         stopArrivals={stopArrivals}
         arrivalsLoading={arrivalsLoading}
       />
-      <main className="flex-1 relative">
+      <main className="flex-1 relative p-2">
         <TransitMap 
           gtfsData={gtfsData}
           selectedDate={selectedDate}

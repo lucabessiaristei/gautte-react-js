@@ -135,15 +135,22 @@ export function useGTFSData() {
           ]);
         });
         
-        console.log('Loaded GTFS data (stop_times loaded on-demand):', {
+        // Load stop_times
+        console.log('Loading stop_times.txt...');
+        const stopTimesText = await fetch('/public_data/stop_times.txt').then(r => r.text());
+        const stopTimes = parseCSVArray(stopTimesText);
+        console.log(`Loaded ${stopTimes.length} stop_times entries`);
+        
+        console.log('GTFS data loaded successfully:', {
           stops: Object.keys(stops).length,
           routes: Object.keys(routes).length,
           trips: Object.keys(trips).length,
           services: Object.keys(services).length,
-          shapes: Object.keys(shapes).length
+          shapes: Object.keys(shapes).length,
+          stopTimes: stopTimes.length
         });
         
-        setGtfsData({ stops, routes, trips, services, shapes, stopTimes: null });
+        setGtfsData({ stops, routes, trips, services, shapes, stopTimes });
         setLoading(false);
       } catch (err) {
         console.error('Error loading GTFS data:', err);

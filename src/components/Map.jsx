@@ -19,30 +19,34 @@ function TransitMap(props) {
 	const currentVisibleRouteRef = useRef(null);
 	const currentVisibleStopRef = useRef(null);
 	const activeRoutesRef = useRef([]);
-	const [tripStopsIndex, setTripStopsIndex] = useState(null);
-	const [indexLoading, setIndexLoading] = useState(true);
 
-	// Load trip index
-	useEffect(() => {
-		const loadIndex = async () => {
-			console.log('⏳ Loading trip→stops index (15MB, cached after first load)...');
-			try {
-				const response = await fetch('/public_data/trip_stops_index.json');
-				const index = await response.json();
-				setTripStopsIndex(index);
-				setIndexLoading(false);
-				console.log('✅ Loaded trip→stops index with', Object.keys(index).length, 'trips');
-			} catch (error) {
-				console.error('❌ Failed to load trip index:', error);
-				setIndexLoading(false);
-			}
-		};
-		loadIndex();
-	}, []);
+	if (!gtfsData) {
+		return <div className="w-full h-screen flex items-center justify-center">Waiting for data...</div>;
+	}
 
-	// Initialize map
+	// Check if essential data is loaded (stopTimes can be loaded on-demand)
+	const missingData = [];
+	if (!gtfsData.stops) missingData.push("stops");
+	if (!gtfsData.routes) missingData.push("routes");
+	if (!gtfsData.trips) missingData.push("trips");
+	// stopTimes is optional - can be loaded on-demand
+	if (!gtfsData.services) missingData.push("services");
+	if (!gtfsData.shapes) missingData.push("shapes");
+
+	if (missingData.length > 0) {
+		console.log("Map waiting for:", missingData);
+		console.log("Current gtfsData:", {
+			stops: gtfsData.stops ? "loaded" : "missing",
+			routes: gtfsData.routes ? "loaded" : "missing",
+			trips: gtfsData.trips ? "loaded" : "missing",
+			stopTimes: gtfsData.stopTimes ? (Array.isArray(gtfsData.stopTimes) ? `Array(${gtfsData.stopTimes.length})` : typeof gtfsData.stopTimes) : "missing",
+			services: gtfsData.services ? "loaded" : "missing",
+		});
+		return <div className="w-full h-screen flex items-center justify-center">Loading GTFS data... (waiting for: {missingData.join(", ")})</div>;
+	}
+
 	useEffect(() => {
-		if (!mapContainer.current || map.current || !gtfsData || indexLoading) return;
+		if (!mapContainer.current || map.current) return;
 
 		map.current = new maplibregl.Map({
 			container: mapContainer.current,
@@ -87,74 +91,7 @@ function TransitMap(props) {
 				map.current = null;
 			}
 		};
-	}, [gtfsData, indexLoading]);
-
-	// Create stop markers when data is ready
-	useEffect(() => {
-		if (gtfsData?.stops && mapLoaded && map.current?.getSource("stops")) {
-			createStopMarkers();
-		}
-	}, [gtfsData?.stops, mapLoaded]);
-
-	// Setup window actions
-	useEffect(() => {
-		window.mapActions = {
-			resetView: () => {
-				clearRoutes();
-				createStopMarkers();
-				onShowCloseLine?.(false);
-				map.current?.flyTo({ center: CONFIG.INITIAL_CENTER, zoom: CONFIG.INITIAL_ZOOM });
-			},
-			locateUser: () => {
-				if (!navigator.geolocation) return alert("Geolocation not supported");
-				navigator.geolocation.getCurrentPosition(
-					(pos) => {
-						const { latitude, longitude } = pos.coords;
-						if (map.current.getLayer("user-location")) {
-							map.current.removeLayer("user-location");
-							map.current.removeSource("user-location");
-						}
-						map.current.addSource("user-location", {
-							type: "geojson",
-							data: { type: "Feature", geometry: { type: "Point", coordinates: [longitude, latitude] } },
-						});
-						map.current.addLayer({
-							id: "user-location",
-							type: "circle",
-							source: "user-location",
-							paint: { "circle-radius": 10, "circle-color": "#4285f4", "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
-						});
-						map.current.flyTo({ center: [longitude, latitude], zoom: 15 });
-					},
-					(err) => alert(`Geolocation error: ${err.message}`)
-				);
-			},
-			closeLine: () => {
-				closeAllPopups();
-				clearRoutes();
-				createStopMarkers();
-				onShowCloseLine?.(false);
-				if (typeof window.closeArrivals === "function") {
-					window.closeArrivals();
-				}
-			},
-		};
-	}, [activeRoutes, gtfsData, mapLoaded, selectedDate, selectedTime]);
-
-	if (!gtfsData || indexLoading) {
-		return (
-			<div className="w-full h-screen flex flex-col items-center justify-center gap-4">
-				<div className="text-xl text-gray-600">
-					{!gtfsData ? 'Loading map data...' : 'Loading route index...'}
-				</div>
-				{indexLoading && (
-					<div className="text-sm text-gray-500">
-						(15MB - cached after first load)
-					</div>
-				)}
-			</div>
-		);
-	}
+	}, []);
 
 	function setupMapLayers() {
 		if (!map.current) return;
@@ -179,10 +116,9 @@ function TransitMap(props) {
 			source: "stops",
 			filter: ["has", "point_count"],
 			paint: {
-				"circle-color": ["step", ["get", "point_count"], "#51bbd6", 10, "#f1f075", 30, "#f28cb1"],
-				"circle-radius": ["step", ["get", "point_count"], 20, 10, 25, 30, 30],
-				"circle-stroke-width": 2,
-				"circle-stroke-color": "#fff",
+				"circle-radius": ["interpolate", ["linear"], ["get", "point_count"], 1, 18, 50, 30],
+				"circle-color": ["interpolate", ["linear"], ["get", "point_count"], 1, "#5a6fb3", 50, "#1d3a78"],
+				"circle-stroke-width": 0,
 			},
 		});
 
@@ -224,7 +160,7 @@ function TransitMap(props) {
 			layout: { visibility: "none" },
 		});
 
-		const layersOrder = map.current.getStyle().layers.map(l => l.id);
+		const layersOrder = map.current.getStyle().layers.map((l) => l.id);
 		if (layersOrder.includes("clusters")) {
 			map.current.moveLayer("clusters");
 		}
@@ -277,7 +213,7 @@ function TransitMap(props) {
 	function handleStopClick(e) {
 		const coordinates = e.features[0].geometry.coordinates.slice();
 		const stopId = e.features[0].properties.stopId;
-		
+
 		const stop = gtfsData.stops[stopId];
 		if (stop && onStopSelect) {
 			onStopSelect(stop);
@@ -285,9 +221,12 @@ function TransitMap(props) {
 		showStopPopup(coordinates, stopId);
 	}
 
-	async function showStopPopup(coordinates, stopId) {
+	function showStopPopup(coordinates, stopId) {
 		const stop = gtfsData.stops[stopId];
 		if (!stop) return;
+
+		const isLoading = !gtfsData.stopTimes || !Array.isArray(gtfsData.stopTimes);
+		const activeRoutes = isLoading ? [] : getActiveRoutesForStop(stopId);
 
 		const popupNode = document.createElement("div");
 
@@ -304,30 +243,14 @@ function TransitMap(props) {
 		const root = createRoot(popupNode);
 		popupRoots.current.set(stopId, root);
 
-		// Show loading state first
-		root.render(
-			<StopPopup
-				stop={stop}
-				activeRoutes={[]}
-				gtfsData={gtfsData}
-				onRouteSelect={(routeId) => showRoute(stopId, routeId)}
-				currentVisibleRouteId={currentVisibleRouteRef.current}
-				loading={true}
-			/>
-		);
-
-		// Load active routes
-		const activeRoutes = await getActiveRoutesForStop(stopId);
-
-		// Update with actual routes
 		root.render(
 			<StopPopup
 				stop={stop}
 				activeRoutes={activeRoutes}
 				gtfsData={gtfsData}
 				onRouteSelect={(routeId) => showRoute(stopId, routeId)}
-				currentVisibleRouteId={currentVisibleRouteRef.current}
-				loading={false}
+				currentVisibleRouteId={currentVisibleRouteId}
+				loading={isLoading}
 			/>
 		);
 
@@ -340,67 +263,40 @@ function TransitMap(props) {
 		});
 	}
 
-	function parseStopTimesCSV(text) {
-		const lines = text.trim().split('\n');
-		const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-		const data = [];
-		
-		for (let i = 1; i < lines.length; i++) {
-			const values = [];
-			let current = '';
-			let inQuotes = false;
-			
-			for (let char of lines[i]) {
-				if (char === '"') {
-					inQuotes = !inQuotes;
-				} else if (char === ',' && !inQuotes) {
-					values.push(current.trim());
-					current = '';
-				} else {
-					current += char;
-				}
-			}
-			values.push(current.trim());
-			
-			const row = {};
-			headers.forEach((header, index) => {
-				row[header] = values[index]?.replace(/"/g, '') || '';
-			});
-			
-			data.push(row);
-		}
-		
-		return data;
-	}
-
-	async function getActiveRoutesForStop(stopId) {
-		const now = new Date();
-		const todayStr = now.toISOString().split('T')[0].replace(/-/g, '');
-		const routeSet = new Set();
-
-		let stopTimes = [];
-
-		// Load split file for this stop
-		try {
-			const response = await fetch(`/public_data/stop_times/${stopId}.txt`);
-			if (response.ok) {
-				const text = await response.text();
-				stopTimes = parseStopTimesCSV(text);
-			}
-		} catch (error) {
-			console.warn(`Could not load stop_times for stop ${stopId}`);
+	function getActiveRoutesForStop(stopId) {
+		if (!gtfsData.stopTimes || !Array.isArray(gtfsData.stopTimes)) {
+			console.warn("stopTimes not loaded yet, cannot determine active routes");
 			return [];
 		}
 
-		stopTimes.forEach(stopTime => {
+		const dateToUse = selectedDate || new Date().toISOString().split("T")[0];
+		const timeToUse = selectedTime || new Date().toTimeString().slice(0, 5);
+
+		const todayStr = dateToUse.replace(/-/g, "");
+		const [hours, minutes] = timeToUse.split(":").map(Number);
+		const currentTimeInSeconds = hours * 3600 + minutes * 60;
+
+		const dateObj = new Date(dateToUse);
+		const routeSet = new Set();
+
+		gtfsData.stopTimes.forEach((stopTime) => {
+			if (stopTime.stop_id !== String(stopId)) return;
 
 			const trip = gtfsData.trips[stopTime.trip_id];
 			if (!trip) return;
 
 			const service = gtfsData.services[trip.service_id];
-			if (!service || !isServiceActive(service, todayStr, now)) return;
+			if (!service || !isServiceActive(service, todayStr, dateObj)) return;
 
-			routeSet.add(trip.route_id);
+			const arrivalTime = stopTime.arrival_time || stopTime.departure_time;
+			if (!arrivalTime) return;
+
+			const [stopHours, stopMinutes, stopSeconds] = arrivalTime.split(":").map(Number);
+			const stopTimeInSeconds = (stopHours % 24) * 3600 + stopMinutes * 60 + (stopSeconds || 0);
+
+			if (stopHours >= 24 || stopTimeInSeconds >= currentTimeInSeconds) {
+				routeSet.add(trip.route_id);
+			}
 		});
 
 		return Array.from(routeSet);
@@ -409,63 +305,16 @@ function TransitMap(props) {
 	function isServiceActive(service, dateStr, date) {
 		if (service.start_date && dateStr < service.start_date) return false;
 		if (service.end_date && dateStr > service.end_date) return false;
-		
-		const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+		const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 		const dayName = dayNames[date.getDay()];
-		
-		if (service[dayName] !== '1') return false;
-		
+
+		if (service[dayName] !== "1") return false;
+
 		if (service.exceptions && service.exceptions[dateStr] === 2) return false;
 		if (service.exceptions && service.exceptions[dateStr] === 1) return true;
-		
-		return true;
-	}
 
-	async function getStopsForTripFromFiles(tripId) {
-		// Instead of loading huge index, we'll check a representative sample of stops
-		// This is not perfect but much faster than loading 14MB index
-		
-		// Strategy: use the shape to know approximately which stops to check
-		const trip = gtfsData.trips[tripId];
-		if (!trip || !gtfsData.shapes[trip.shape_id]) {
-			return [];
-		}
-		
-		// Get all stop IDs
-		const allStopIds = Object.keys(gtfsData.stops);
-		const foundStops = [];
-		
-		// Load stop_times files in parallel (limit to avoid overwhelming)
-		const batchSize = 20;
-		for (let i = 0; i < allStopIds.length; i += batchSize) {
-			const batch = allStopIds.slice(i, i + batchSize);
-			const promises = batch.map(async stopId => {
-				try {
-					const response = await fetch(`/public_data/stop_times/${stopId}.txt`);
-					if (!response.ok) return null;
-					
-					const text = await response.text();
-					// Quick check: does this file contain our tripId?
-					if (text.includes(tripId)) {
-						return stopId;
-					}
-				} catch {
-					return null;
-				}
-				return null;
-			});
-			
-			const results = await Promise.all(promises);
-			results.forEach(stopId => {
-				if (stopId) foundStops.push(stopId);
-			});
-			
-			// Early exit if we found enough stops
-			if (foundStops.length > 50) break;
-		}
-		
-		console.log(`Found ${foundStops.length} stops for trip ${tripId}`);
-		return foundStops;
+		return true;
 	}
 
 	function showRoute(stopId, routeId) {
@@ -475,67 +324,81 @@ function TransitMap(props) {
 		setCurrentVisibleRouteId(routeId);
 		setCurrentVisibleStopId(stopId);
 
-		const now = new Date();
-		const todayStr = now.toISOString().split('T')[0].replace(/-/g, '');
-		
-		const routeTrips = Object.values(gtfsData.trips).filter(
-			trip => trip.route_id === routeId && isServiceActive(gtfsData.services[trip.service_id], todayStr, now)
-		);
+		// Use selected date from UI, or fallback to current date
+		const dateToUse = selectedDate || new Date().toISOString().split("T")[0];
+		const todayStr = dateToUse.replace(/-/g, "");
+		const dateObj = new Date(dateToUse);
 
-		const tripsByDirection = {};
-		routeTrips.forEach(trip => {
+		console.log(`Showing route ${routeId}, date: ${dateToUse}`);
+
+		// Get all trips for this route with active service TODAY (ignore time)
+		const activeTripsToday = Object.values(gtfsData.trips).filter((trip) => {
+			if (trip.route_id !== routeId) return false;
+			const service = gtfsData.services[trip.service_id];
+			return service && isServiceActive(service, todayStr, dateObj);
+		});
+
+		console.log(`Found ${activeTripsToday.length} trips active today for route ${routeId}`);
+
+		// Collect all unique shapes by direction from trips active today
+		const shapesByDirection = { 0: new Set(), 1: new Set() };
+
+		activeTripsToday.forEach((trip) => {
 			const direction = trip.direction_id || "0";
-			if (!tripsByDirection[direction]) {
-				tripsByDirection[direction] = trip;
+			const shapeId = trip.shape_id;
+
+			if (shapeId && gtfsData.shapes[shapeId]) {
+				shapesByDirection[direction].add(shapeId);
 			}
 		});
 
-		console.log('Route', routeId, 'has', routeTrips.length, 'trips');
-routeTrips.forEach(t => {
-  console.log('Trip', t.trip_id, 'direction', t.direction_id, 'shape', t.shape_id);
-});
+		console.log("Unique shapes by direction:", {
+			0: Array.from(shapesByDirection["0"]),
+			1: Array.from(shapesByDirection["1"]),
+		});
 
+		// Collect ALL stops from ALL trips of this route with active service today
+		// Optimized: iterate stop_times once instead of per-trip
+		const allStops = new Set();
+		const stopDirections = new Map();
+		const activeTripIds = new Set(activeTripsToday.map((t) => t.trip_id));
+
+		if (gtfsData.stopTimes) {
+			gtfsData.stopTimes.forEach((st) => {
+				if (activeTripIds.has(st.trip_id)) {
+					const trip = gtfsData.trips[st.trip_id];
+					const direction = trip?.direction_id || "0";
+
+					allStops.add(st.stop_id);
+					if (!stopDirections.has(st.stop_id)) {
+						stopDirections.set(st.stop_id, new Set());
+					}
+					stopDirections.get(st.stop_id).add(direction);
+				}
+			});
+		}
+
+		console.log(`Total stops for route ${routeId}: ${allStops.size}`);
+
+		// Draw ALL shapes for each direction
 		const newActiveRoutes = [];
-
-		// Draw route shapes immediately
-		Object.entries(tripsByDirection).forEach(([direction, trip]) => {
-			const routeLayerId = drawRouteShape(trip, direction);
-			if (routeLayerId) newActiveRoutes.push(routeLayerId);
+		["0", "1"].forEach((direction) => {
+			const shapesForDirection = Array.from(shapesByDirection[direction]);
+			shapesForDirection.forEach((shapeId, index) => {
+				const mockTrip = { shape_id: shapeId, route_id: routeId };
+				const routeLayerId = drawRouteShape(mockTrip, direction);
+				if (routeLayerId) {
+					newActiveRoutes.push(routeLayerId);
+					console.log(`Drew shape ${shapeId} for direction ${direction}`);
+				}
+			});
 		});
 
 		activeRoutesRef.current = newActiveRoutes;
 		setActiveRoutes(newActiveRoutes);
+		updateVisibleStops(allStops, stopDirections);
 		toggleClustering(false);
 		onShowCloseLine?.(true);
-
-		// Load stops asynchronously
-		loadStopsForRoute(tripsByDirection);
-	}
-
-	async function loadStopsForRoute(tripsByDirection) {
-		if (!tripStopsIndex) {
-			console.warn('⚠️ Index not loaded yet');
-			return;
-		}
-
-		const allStops = new Set();
-		const stopDirections = new Map();
-
-		// Get stops instantly from index
-		for (const [direction, trip] of Object.entries(tripsByDirection)) {
-			const tripStops = tripStopsIndex[trip.trip_id] || [];
-			
-			tripStops.forEach(stopId => {
-				allStops.add(stopId);
-				if (!stopDirections.has(stopId)) {
-					stopDirections.set(stopId, new Set());
-				}
-				stopDirections.get(stopId).add(direction);
-			});
-		}
-
-		updateVisibleStops(allStops, stopDirections);
-		console.log(`✅ Showing ${allStops.size} stops instantly from index`);
 	}
 
 	function drawRouteShape(trip, direction) {
@@ -545,7 +408,7 @@ routeTrips.forEach(t => {
 		const lineCoordinates = coordinates.map((coord) => [coord[1], coord[0]]);
 		const offset = -0.00004;
 		const offsetCoordinates = PolylineOffset.offsetLine(lineCoordinates, offset);
-		const routeId = `route-${trip.route_id}-${direction}`;
+		const routeId = `route-${trip.route_id}-${trip.shape_id}-${direction}`;
 		const color = direction === "0" ? CONFIG.ROUTE_COLORS.direction0 : CONFIG.ROUTE_COLORS.direction1;
 
 		if (map.current.getSource(routeId)) {
@@ -562,13 +425,16 @@ routeTrips.forEach(t => {
 			},
 		});
 
-		map.current.addLayer({
-			id: routeId,
-			type: "line",
-			source: routeId,
-			layout: { "line-join": "round", "line-cap": "round" },
-			paint: { "line-color": color, "line-width": 4, "line-opacity": 0.85 },
-		});
+		map.current.addLayer(
+			{
+				id: routeId,
+				type: "line",
+				source: routeId,
+				layout: { "line-join": "round", "line-cap": "round" },
+				paint: { "line-color": color, "line-width": 4, "line-opacity": 0.85 },
+			},
+			"stops-nocluster-layer"
+		);
 
 		return routeId;
 	}
@@ -640,7 +506,81 @@ routeTrips.forEach(t => {
 		toggleClustering(true);
 	}
 
-	return <div ref={mapContainer} className="w-full h-full rounded-2xl" />;
+	useEffect(() => {
+		if (gtfsData?.stops && mapLoaded && map.current?.getSource("stops")) {
+			createStopMarkers();
+		}
+	}, [gtfsData?.stops, mapLoaded]);
+
+	useEffect(() => {
+		window.mapActions = {
+			resetView: () => {
+				clearRoutes();
+				createStopMarkers();
+				onShowCloseLine?.(false);
+				map.current?.flyTo({ center: CONFIG.INITIAL_CENTER, zoom: CONFIG.INITIAL_ZOOM });
+			},
+			locateUser: () => {
+				if (!navigator.geolocation) return alert("Geolocation not supported");
+				navigator.geolocation.getCurrentPosition(
+					(pos) => {
+						const { latitude, longitude } = pos.coords;
+						if (map.current.getLayer("user-location")) {
+							map.current.removeLayer("user-location");
+							map.current.removeSource("user-location");
+						}
+						map.current.addSource("user-location", {
+							type: "geojson",
+							data: { type: "Feature", geometry: { type: "Point", coordinates: [longitude, latitude] } },
+						});
+						map.current.addLayer({
+							id: "user-location",
+							type: "circle",
+							source: "user-location",
+							paint: { "circle-radius": 10, "circle-color": "#4285f4", "circle-stroke-color": "#fff", "circle-stroke-width": 2 },
+						});
+						map.current.flyTo({ center: [longitude, latitude], zoom: 15 });
+					},
+					(err) => alert(`Geolocation error: ${err.message}`)
+				);
+			},
+			closeLine: () => {
+				closeAllPopups();
+				clearRoutes();
+				createStopMarkers();
+				onShowCloseLine?.(false);
+				if (typeof window.closeArrivals === "function") {
+					window.closeArrivals();
+				}
+			},
+		};
+	}, [activeRoutes, gtfsData, mapLoaded, selectedDate, selectedTime]);
+
+	// Re-render open popups when currentVisibleRouteId changes
+	useEffect(() => {
+		popupRoots.current.forEach((root, stopId) => {
+			const stop = gtfsData.stops[stopId];
+			if (!stop) return;
+
+			const activeRoutes = getActiveRoutesForStop(stopId);
+
+			root.render(
+				<StopPopup
+					stop={stop}
+					activeRoutes={activeRoutes}
+					gtfsData={gtfsData}
+					onRouteSelect={(routeId) => showRoute(stopId, routeId)}
+					currentVisibleRouteId={currentVisibleRouteId}
+				/>
+			);
+		});
+	}, [currentVisibleRouteId]);
+
+	return (
+		<>
+			<div ref={mapContainer} className="w-full h-full rounded-2xl" />
+		</>
+	);
 }
 
 export default TransitMap;
