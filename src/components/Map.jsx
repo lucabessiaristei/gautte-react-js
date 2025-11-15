@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import StopPopup from "./StopPopup";
 
 function TransitMap(props) {
-	const { gtfsData, selectedDate, selectedTime, onShowCloseLine, onStopSelect } = props || {};
+	const { gtfsData, selectedDate, selectedTime, onShowCloseLine, onStopSelect  } = props || {};
 
 	const mapContainer = useRef(null);
 	const map = useRef(null);
@@ -70,7 +70,7 @@ function TransitMap(props) {
 			"bottom-right"
 		);
 
-		map.current.addControl(new maplibregl.NavigationControl(), "bottom-left");
+		map.current.addControl(new maplibregl.NavigationControl(), "top-right");
 
 		map.current.on("error", (e) => {
 			if (e.error && e.error.message && e.error.message.includes("glyph")) {
