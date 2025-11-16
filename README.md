@@ -1,6 +1,6 @@
 # GAUTTE React.JS
 
-**Version 0.30.5** - *In Development*
+**Version 0.40.0-alpha** - *In Development*
 
 Real-time transit visualization for Turin's public transport system (GTT). Interactive map with live bus arrivals, route visualization, and schedule queries.
 
@@ -9,10 +9,12 @@ Real-time transit visualization for Turin's public transport system (GTT). Inter
 ### Working
 - Interactive map with stop clustering
 - Route visualization with direction colors
-- Real-time arrival predictions
+- Real-time arrival predictions with 30s refresh
 - Date/time schedule queries
-- Service calendar support
+- Service calendar with exception handling
 - User geolocation
+- Optimized stop_times loading (3s vs 20s+)
+- On-demand data loading per stop
 
 ### To Fix
 - Stop popup closing behavior (UI elements remain visible)
@@ -28,13 +30,6 @@ React 18 • Vite • MapLibre GL JS • Tailwind CSS v4 • Phosphor Icons • 
 **Realtime API**: GTT GTFS Realtime (30s updates)  
 **Map Style**: MapLibre Liberty theme
 
-## Quick Start
-
-```bash
-npm install
-npm run dev
-```
-
 ## Project Structure
 
 ```
@@ -42,15 +37,27 @@ src/
 ├── components/        # Map, Sidebar, StopArrivals, StopPopup
 ├── hooks/            # useGTFSData
 ├── services/         # gtfsRealtimeService
-├── utils/            # config, dateHelpers, polylineOffset
+├── utils/            # config, dateHelpers, polylineOffset, mapService
 └── App.jsx
+
+public_data/
+├── stops.txt         # All stops (~7K entries)
+├── routes.txt        # All routes
+├── trips.txt         # All trips
+├── calendar.txt      # Service schedules
+├── shapes.txt        # Route geometries
+└── stop_times/       # Split files (7K+ files)
+    ├── 6.txt         # Stop times for stop_id 6
+    ├── 7.txt         # Stop times for stop_id 7
+    └── ...
 ```
 
 ## Key Features
 
 **Map Component**: MapLibre integration with clustering, route shapes, stop interactions  
 **Realtime Service**: Protocol Buffer parsing, delay calculations, arrival predictions  
-**GTFS Processing**: CSV parsing, service calendar validation, trip filtering
+**GTFS Processing**: CSV parsing, service calendar validation, trip filtering  
+**Performance**: Multi-layered caching (localStorage, Service Worker, HTTP headers), split stop_times per stop for on-demand loading
 
 ## Configuration
 

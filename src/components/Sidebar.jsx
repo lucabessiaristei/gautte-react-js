@@ -30,7 +30,7 @@ export default function Sidebar({ isOpen, onToggle, onDateChange, onTimeChange, 
 						<div className="p-5 relative right-0 border-b border-gray-200 flex flex-col">
 							<img src={Logo} alt="GAUTTE" className="h-[100px] w-fit min-w-fit" />
 
-							<p className="text-xs text-gray-500 mt-2 whitespace-nowrap">Versione 0.30.5</p>
+							<p className="text-xs text-gray-500 mt-2 whitespace-nowrap">Versione 0.4-alpha</p>
 						</div>
 
 						<div className="p-5 relative right-0 border-b border-gray-200">
