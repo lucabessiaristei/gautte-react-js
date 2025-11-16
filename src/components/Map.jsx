@@ -5,9 +5,10 @@ import { CONFIG } from "../utils/config";
 import { PolylineOffset } from "../utils/polylineOffset";
 import { createRoot } from "react-dom/client";
 import StopPopup from "./StopPopup";
+import { loadStopTimes } from "../hooks/useGTFSData";
 
 function TransitMap(props) {
-	const { gtfsData, selectedDate, selectedTime, onShowCloseLine, onStopSelect  } = props || {};
+	const { gtfsData, setGtfsData, selectedDate, selectedTime, onShowCloseLine, onStopSelect, onMapReady  } = props || {};
 
 	const mapContainer = useRef(null);
 	const map = useRef(null);
@@ -24,24 +25,16 @@ function TransitMap(props) {
 		return <div className="w-full h-screen flex items-center justify-center">Waiting for data...</div>;
 	}
 
-	// Check if essential data is loaded (stopTimes can be loaded on-demand)
+	// Check if essential data is loaded
 	const missingData = [];
 	if (!gtfsData.stops) missingData.push("stops");
 	if (!gtfsData.routes) missingData.push("routes");
 	if (!gtfsData.trips) missingData.push("trips");
-	// stopTimes is optional - can be loaded on-demand
 	if (!gtfsData.services) missingData.push("services");
 	if (!gtfsData.shapes) missingData.push("shapes");
 
 	if (missingData.length > 0) {
 		console.log("Map waiting for:", missingData);
-		console.log("Current gtfsData:", {
-			stops: gtfsData.stops ? "loaded" : "missing",
-			routes: gtfsData.routes ? "loaded" : "missing",
-			trips: gtfsData.trips ? "loaded" : "missing",
-			stopTimes: gtfsData.stopTimes ? (Array.isArray(gtfsData.stopTimes) ? `Array(${gtfsData.stopTimes.length})` : typeof gtfsData.stopTimes) : "missing",
-			services: gtfsData.services ? "loaded" : "missing",
-		});
 		return <div className="w-full h-screen flex items-center justify-center">Loading GTFS data... (waiting for: {missingData.join(", ")})</div>;
 	}
 
@@ -82,6 +75,7 @@ function TransitMap(props) {
 			console.log("Map loaded");
 			setMapLoaded(true);
 			setupMapLayers();
+			onMapReady?.();
 		});
 
 		return () => {
@@ -225,9 +219,6 @@ function TransitMap(props) {
 		const stop = gtfsData.stops[stopId];
 		if (!stop) return;
 
-		const isLoading = !gtfsData.stopTimes || !Array.isArray(gtfsData.stopTimes);
-		const activeRoutes = isLoading ? [] : getActiveRoutesForStop(stopId);
-
 		const popupNode = document.createElement("div");
 
 		const popup = new maplibregl.Popup({
@@ -246,13 +237,27 @@ function TransitMap(props) {
 		root.render(
 			<StopPopup
 				stop={stop}
-				activeRoutes={activeRoutes}
+				activeRoutes={[]}
 				gtfsData={gtfsData}
 				onRouteSelect={(routeId) => showRoute(stopId, routeId)}
 				currentVisibleRouteId={currentVisibleRouteId}
-				loading={isLoading}
+				loading={true}
 			/>
 		);
+
+		loadStopTimes(stopId, gtfsData, setGtfsData).then(stopTimes => {
+			const activeRoutes = getActiveRoutesForStop(stopId, stopTimes);
+			root.render(
+				<StopPopup
+					stop={stop}
+					activeRoutes={activeRoutes}
+					gtfsData={gtfsData}
+					onRouteSelect={(routeId) => showRoute(stopId, routeId)}
+					currentVisibleRouteId={currentVisibleRouteId}
+					loading={false}
+				/>
+			);
+		});
 
 		popup.on("close", () => {
 			const root = popupRoots.current.get(stopId);
@@ -263,9 +268,9 @@ function TransitMap(props) {
 		});
 	}
 
-	function getActiveRoutesForStop(stopId) {
-		if (!gtfsData.stopTimes || !Array.isArray(gtfsData.stopTimes)) {
-			console.warn("stopTimes not loaded yet, cannot determine active routes");
+	function getActiveRoutesForStop(stopId, stopTimes) {
+		if (!stopTimes || !Array.isArray(stopTimes)) {
+			console.warn("stopTimes not provided, cannot determine active routes");
 			return [];
 		}
 
@@ -279,7 +284,7 @@ function TransitMap(props) {
 		const dateObj = new Date(dateToUse);
 		const routeSet = new Set();
 
-		gtfsData.stopTimes.forEach((stopTime) => {
+		stopTimes.forEach((stopTime) => {
 			if (stopTime.stop_id !== String(stopId)) return;
 
 			const trip = gtfsData.trips[stopTime.trip_id];
@@ -317,21 +322,19 @@ function TransitMap(props) {
 		return true;
 	}
 
-	function showRoute(stopId, routeId) {
+	async function showRoute(stopId, routeId) {
 		clearRoutes();
 		currentVisibleRouteRef.current = routeId;
 		currentVisibleStopRef.current = stopId;
 		setCurrentVisibleRouteId(routeId);
 		setCurrentVisibleStopId(stopId);
 
-		// Use selected date from UI, or fallback to current date
 		const dateToUse = selectedDate || new Date().toISOString().split("T")[0];
 		const todayStr = dateToUse.replace(/-/g, "");
 		const dateObj = new Date(dateToUse);
 
 		console.log(`Showing route ${routeId}, date: ${dateToUse}`);
 
-		// Get all trips for this route with active service TODAY (ignore time)
 		const activeTripsToday = Object.values(gtfsData.trips).filter((trip) => {
 			if (trip.route_id !== routeId) return false;
 			const service = gtfsData.services[trip.service_id];
@@ -340,13 +343,10 @@ function TransitMap(props) {
 
 		console.log(`Found ${activeTripsToday.length} trips active today for route ${routeId}`);
 
-		// Collect all unique shapes by direction from trips active today
 		const shapesByDirection = { 0: new Set(), 1: new Set() };
-
 		activeTripsToday.forEach((trip) => {
 			const direction = trip.direction_id || "0";
 			const shapeId = trip.shape_id;
-
 			if (shapeId && gtfsData.shapes[shapeId]) {
 				shapesByDirection[direction].add(shapeId);
 			}
@@ -357,34 +357,50 @@ function TransitMap(props) {
 			1: Array.from(shapesByDirection["1"]),
 		});
 
-		// Collect ALL stops from ALL trips of this route with active service today
-		// Optimized: iterate stop_times once instead of per-trip
+		// Get list of stops for this route from routeStops mapping
+		const stopsForRoute = gtfsData.routeStops?.[routeId] || [];
+		console.log(`Route ${routeId} has ${stopsForRoute.length} stops`);
+
 		const allStops = new Set();
 		const stopDirections = new Map();
 		const activeTripIds = new Set(activeTripsToday.map((t) => t.trip_id));
 
-		if (gtfsData.stopTimes) {
-			gtfsData.stopTimes.forEach((st) => {
-				if (activeTripIds.has(st.trip_id)) {
-					const trip = gtfsData.trips[st.trip_id];
-					const direction = trip?.direction_id || "0";
-
-					allStops.add(st.stop_id);
-					if (!stopDirections.has(st.stop_id)) {
-						stopDirections.set(st.stop_id, new Set());
+		// Load stop_times for each stop in the route (in batches)
+		const BATCH_SIZE = 10;
+		for (let i = 0; i < stopsForRoute.length; i += BATCH_SIZE) {
+			const batch = stopsForRoute.slice(i, i + BATCH_SIZE);
+			
+			await Promise.all(
+				batch.map(async (sid) => {
+					try {
+						const stopTimes = gtfsData.stopTimesCache[sid] || await loadStopTimes(sid, gtfsData, setGtfsData);
+						
+						stopTimes.forEach(st => {
+							if (activeTripIds.has(st.trip_id)) {
+								const trip = gtfsData.trips[st.trip_id];
+								const direction = trip?.direction_id || "0";
+								
+								allStops.add(st.stop_id);
+								if (!stopDirections.has(st.stop_id)) {
+									stopDirections.set(st.stop_id, new Set());
+								}
+								stopDirections.get(st.stop_id).add(direction);
+							}
+						});
+					} catch (e) {
+						console.warn(`Could not load stop_times for stop ${sid}:`, e);
 					}
-					stopDirections.get(st.stop_id).add(direction);
-				}
-			});
+				})
+			);
 		}
 
-		console.log(`Total stops for route ${routeId}: ${allStops.size}`);
+		console.log(`Loaded stop_times, found ${allStops.size} active stops for route ${routeId}`);
 
-		// Draw ALL shapes for each direction
+		// Draw shapes
 		const newActiveRoutes = [];
 		["0", "1"].forEach((direction) => {
 			const shapesForDirection = Array.from(shapesByDirection[direction]);
-			shapesForDirection.forEach((shapeId, index) => {
+			shapesForDirection.forEach((shapeId) => {
 				const mockTrip = { shape_id: shapeId, route_id: routeId };
 				const routeLayerId = drawRouteShape(mockTrip, direction);
 				if (routeLayerId) {
@@ -562,7 +578,10 @@ function TransitMap(props) {
 			const stop = gtfsData.stops[stopId];
 			if (!stop) return;
 
-			const activeRoutes = getActiveRoutesForStop(stopId);
+			const stopTimes = gtfsData.stopTimesCache?.[stopId];
+			if (!stopTimes) return;
+
+			const activeRoutes = getActiveRoutesForStop(stopId, stopTimes);
 
 			root.render(
 				<StopPopup

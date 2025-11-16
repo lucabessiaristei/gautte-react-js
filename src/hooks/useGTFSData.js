@@ -70,6 +70,32 @@ function parseCSVArray(text) {
   return data;
 }
 
+export async function loadStopTimes(stopId, gtfsData, setGtfsData) {
+  if (gtfsData.stopTimesCache[stopId]) {
+    return gtfsData.stopTimesCache[stopId];
+  }
+
+  try {
+    const stopTimesText = await fetch(`/public_data/stop_times/${stopId}.txt`).then(r => r.text());
+    const stopTimes = parseCSVArray(stopTimesText);
+    
+    const updatedCache = {
+      ...gtfsData.stopTimesCache,
+      [stopId]: stopTimes
+    };
+    
+    setGtfsData(prev => ({
+      ...prev,
+      stopTimesCache: updatedCache
+    }));
+    
+    return stopTimes;
+  } catch (error) {
+    console.error(`Error loading stop_times for stop ${stopId}:`, error);
+    return [];
+  }
+}
+
 export function useGTFSData() {
   const [gtfsData, setGtfsData] = useState({
     stops: null,
@@ -77,7 +103,8 @@ export function useGTFSData() {
     trips: null,
     services: null,
     shapes: null,
-    stopTimes: null
+    routeStops: null,
+    stopTimesCache: {}
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -135,11 +162,14 @@ export function useGTFSData() {
           ]);
         });
         
-        // Load stop_times
-        console.log('Loading stop_times.txt...');
-        const stopTimesText = await fetch('/public_data/stop_times.txt').then(r => r.text());
-        const stopTimes = parseCSVArray(stopTimesText);
-        console.log(`Loaded ${stopTimes.length} stop_times entries`);
+        // Load route_stops mapping
+        let routeStops = {};
+        try {
+          routeStops = await fetch('/public_data/stop_times/route_stops.json').then(r => r.json());
+          console.log('Loaded route_stops mapping');
+        } catch (e) {
+          console.warn('route_stops.json not found - run split script to generate it');
+        }
         
         console.log('GTFS data loaded successfully:', {
           stops: Object.keys(stops).length,
@@ -147,10 +177,10 @@ export function useGTFSData() {
           trips: Object.keys(trips).length,
           services: Object.keys(services).length,
           shapes: Object.keys(shapes).length,
-          stopTimes: stopTimes.length
+          routeStops: Object.keys(routeStops).length
         });
         
-        setGtfsData({ stops, routes, trips, services, shapes, stopTimes });
+        setGtfsData({ stops, routes, trips, services, shapes, routeStops, stopTimesCache: {} });
         setLoading(false);
       } catch (err) {
         console.error('Error loading GTFS data:', err);
@@ -162,5 +192,5 @@ export function useGTFSData() {
     loadData();
   }, []);
 
-  return { gtfsData, loading, error };
+  return { gtfsData, loading, error, setGtfsData };
 }

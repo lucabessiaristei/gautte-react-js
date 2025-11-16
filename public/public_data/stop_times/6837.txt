@@ -1,0 +1,4 @@
+"trip_id","arrival_time","departure_time","stop_id","stop_sequence","stop_headsign","pickup_type","drop_off_type","shape_dist_traveled","timepoint"
+"1951925E","07:12:00","07:12:00","6837","14","","0","0","","1"
+"1951939E","07:12:00","07:12:00","6837","18","","0","0","","1"
+"1951947E","15:22:00","15:22:00","6837","18","","0","0","","1"

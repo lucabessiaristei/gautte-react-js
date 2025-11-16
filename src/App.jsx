@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import TransitMap from "./components/Map";
 import Sidebar from "./components/Sidebar";
-import { useGTFSData } from "./hooks/useGTFSData";
+import { useGTFSData, loadStopTimes } from "./hooks/useGTFSData";
 import { getCurrentDate, getCurrentTime } from "./utils/dateHelpers";
 import { GTFSRealtimeService } from "./services/gtfsRealtimeService";
 
 function App() {
-	const { gtfsData, loading, error } = useGTFSData();
+	const { gtfsData, loading, error, setGtfsData } = useGTFSData();
 	const [selectedDate, setSelectedDate] = useState(getCurrentDate());
 	const [selectedTime, setSelectedTime] = useState(getCurrentTime());
 	const [showCloseLine, setShowCloseLine] = useState(false);
@@ -16,14 +16,21 @@ function App() {
 	const [realtimeService] = useState(() => new GTFSRealtimeService());
 	const [currentRouteId, setCurrentRouteId] = useState(null);
 	const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+	const [mapReady, setMapReady] = useState(false);
 
 	useEffect(() => {
+		if (!selectedStop) return;
+		
 		const fetchRealtime = async () => {
 			try {
 				await realtimeService.fetchTripUpdates();
 
-				if (selectedStop) {
-					const arrivals = realtimeService.getNextArrivalsForStop(selectedStop.stop_id, gtfsData);
+				const stopTimes = gtfsData.stopTimesCache?.[selectedStop.stop_id];
+				if (stopTimes && gtfsData.trips && gtfsData.services) {
+					const arrivals = realtimeService.getNextArrivalsForStop(selectedStop.stop_id, {
+						...gtfsData,
+						stopTimes
+					});
 					setStopArrivals(arrivals);
 				}
 			} catch (error) {
@@ -31,22 +38,17 @@ function App() {
 			}
 		};
 
-		// Only fetch realtime data when all necessary GTFS data is loaded
-		if (gtfsData.trips && gtfsData.stopTimes && gtfsData.services) {
-			fetchRealtime();
-			const interval = setInterval(fetchRealtime, 30000);
-			return () => clearInterval(interval);
-		}
-	}, [gtfsData, selectedStop, realtimeService]);
+		fetchRealtime();
+		const interval = setInterval(fetchRealtime, 30000);
+		return () => clearInterval(interval);
+	}, [selectedStop?.stop_id]);
 
 	useEffect(() => {
 		window.closeArrivals = () => {
 			setSelectedStop(null);
-			setArrivals([]);
-			setShowArrivals(false);
+			setStopArrivals([]);
 		};
 
-		// Cleanup quando il componente si smonta
 		return () => {
 			delete window.closeArrivals;
 		};
@@ -57,14 +59,24 @@ function App() {
 		setArrivalsLoading(true);
 
 		try {
-			// Check if all necessary data is loaded
-			if (!gtfsData.stopTimes || !gtfsData.trips || !gtfsData.services) {
-				console.warn("GTFS data not fully loaded yet");
+			const stopTimes = await loadStopTimes(stop.stop_id, gtfsData, setGtfsData);
+			
+			if (!stopTimes || stopTimes.length === 0) {
+				console.warn(`No stop_times found for stop ${stop.stop_id}`);
 				setStopArrivals([]);
 				return;
 			}
 
-			const arrivals = realtimeService.getNextArrivalsForStop(stop.stop_id, gtfsData);
+			if (!gtfsData.trips || !gtfsData.services) {
+				console.warn("Trips or services not loaded yet");
+				setStopArrivals([]);
+				return;
+			}
+
+			const arrivals = realtimeService.getNextArrivalsForStop(stop.stop_id, {
+				...gtfsData,
+				stopTimes
+			});
 			setStopArrivals(arrivals);
 		} catch (error) {
 			console.error("Failed to get arrivals:", error);
@@ -109,6 +121,11 @@ function App() {
 
 	return (
 		<div className="flex h-screen overflow-hidden">
+			{!mapReady && (
+				<div className="absolute inset-0 z-50 flex justify-center items-center bg-white">
+					<div className="text-xl text-gray-600">Preparing map...</div>
+				</div>
+			)}
 			<div className="relative">
 			  <Sidebar
   				isOpen={isSidebarOpen}
@@ -127,10 +144,12 @@ function App() {
 			<main className="flex-1 relative p-2">
 				<TransitMap
 					gtfsData={gtfsData}
+					setGtfsData={setGtfsData}
 					selectedDate={selectedDate}
 					selectedTime={selectedTime}
 					onShowCloseLine={setShowCloseLine}
 					onStopSelect={handleStopSelect}
+					onMapReady={() => setMapReady(true)}
 				/>
 			</main>
 		</div>
